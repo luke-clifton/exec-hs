@@ -101,6 +101,10 @@ module System.Process
     , AddPipe
     -- | == Miscellaneous
     , dontFork
+    -- | == Re-exports
+    , ProcessStatus(..)
+    , ExitCode(..)
+    , Signal
     ) where
 
 import Data.String
@@ -124,6 +128,8 @@ import Data.Functor.Product
 import Data.Functor.Identity
 import Data.Functor.Classes
 import Data.Unique
+import Data.Foldable
+import GHC.IO.Exception (ExitCode(..))
 
 {-# NOINLINE childrenVar #-}
 childrenVar :: MVar [((ProcessID, Unique), MVar ProcessStatus)]
@@ -214,6 +220,15 @@ processWait (ProcessHandle _ _ var) = readMVar var
 processTryWait :: ProcessHandle -> IO (Maybe ProcessStatus)
 processTryWait (ProcessHandle _ _ var) = tryReadMVar var
 
+-- | Wait for all children processes to finish.
+waitAll :: IO ()
+waitAll = do
+    readMVar childrenVar >>= \case
+        [] -> pure ()
+        children -> do
+            traverse_ (readMVar . snd) children
+            waitAll
+
 -- | A type to use when you don't want any pipes. Also used as the "@Nil@"
 -- element when you add pipes using @'AddPipe'@.
 --
@@ -222,11 +237,19 @@ processTryWait (ProcessHandle _ _ var) = tryReadMVar var
 -- of the combinators in this library to add new pipes, or you can bypass
 -- the @'proc'@ call and use @'procWith'@ instead to directly specify the
 -- pipes you want to create.
+--
+-- NB: You can think of this as a @'Const' ()@.
 data NoPipe a = NoPipe
     deriving stock (Functor, Foldable, Traversable, Show)
 
 -- | Add another pipe onto a process. (See also the @'AddPipe'@ alias which
 -- is easier to read in some scenarios.)
+--
+-- NB: You can think of this as an easier to read and write version of
+--
+-- @
+-- 'Product' b ('Const' a) a
+-- @
 data b :| a = (b a) :| a
     deriving stock (Functor, Foldable, Traversable, Show)
 
@@ -268,7 +291,7 @@ proc = procWith NoPipe NoPipe
 -- to exactly this process even if your system reuses process ID's.
 processSignal :: ProcessHandle -> Signal -> IO ()
 processSignal (ProcessHandle pid ident var) sig = do
-    withMVar childrenVar $ \children -> do
+    withMVar childrenVar $ \children ->
         if (pid, ident) `elem` map fst children
         then signalProcess sig pid
         else pure () -- process already finished.
@@ -339,6 +362,12 @@ spawn ProcessSpec{..} = do
 -- which is used to align the provided pipe handlers with the created pipes.
 class Traversable a => Pipes a where
     zipPipesM :: Monad m => (x -> y -> m z) -> a x -> a y -> m (a z)
+
+instance Pipes (Const ()) where
+    zipPipesM _ _ _ = pure (Const ())
+
+instance Pipes Identity where
+    zipPipesM f (Identity x) (Identity y) = Identity <$> (f x y)
 
 instance Pipes NoPipe where
     zipPipesM _ _ _ = pure NoPipe

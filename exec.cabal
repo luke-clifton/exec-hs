@@ -3,13 +3,13 @@ cabal-version:       >=1.10
 name:                exec
 version:             0.1.0.0
 synopsis:            Execute processes
--- description:
+description:         Execute processes with pipes connecting them to the parent.
 -- bug-reports:
 license:             BSD3
 license-file:        LICENSE
 author:              Luke Clifton
 maintainer:          lukec@themk.net
--- copyright:
+copyright:           2021 Luke Clifton
 category:            System
 build-type:          Simple
 extra-source-files:  CHANGELOG.md
@@ -17,4 +17,11 @@ extra-source-files:  CHANGELOG.md
 library
   exposed-modules:     System.Process
   build-depends:       base >=4.10 && <5.0, unix, bytestring, deepseq, async
+  default-language:    Haskell2010
+
+test-suite test-exec
+  type:           exitcode-stdio-1.0
+  main-is:        Main.hs
+  hs-source-dirs: test
+  build-depends:  base, HUnit, exec, bytestring
   default-language:    Haskell2010
